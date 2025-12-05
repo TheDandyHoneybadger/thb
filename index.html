@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gerador de Recibos - The Hungry Burger</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+    
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f9;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 600px;
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            font-size: 24px;
+            margin-bottom: 20px;
+        }
+
+        h2 {
+            font-size: 18px;
+            color: #555;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 10px;
+        }
+
+        .control-group {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding: 5px 0;
+        }
+
+        .control-group label {
+            font-size: 16px;
+            color: #333;
+        }
+
+        .control-group input[type="number"] {
+            width: 60px;
+            padding: 5px;
+            font-size: 16px;
+            text-align: center;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        .recibo-control {
+            background-color: #eef;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+
+        .recibo-control input {
+            width: 80px;
+        }
+
+        button {
+            width: 100%;
+            padding: 15px;
+            background-color: #28a745;
+            color: white;
+            font-size: 18px;
+            font-weight: bold;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        button:hover {
+            background-color: #218838;
+        }
+
+        .error {
+            color: red;
+            text-align: center;
+            margin-top: 10px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>The Hungry Burger</h1>
+
+        <div class="control-group recibo-control">
+            <label for="numeroRecibo"><strong>Próximo Nº do Recibo:</strong></label>
+            <input type="number" id="numeroRecibo" value="1" min="1">
+        </div>
+
+        <h2>Quantidade de Hambúrgueres</h2>
+        <div id="menu-items">
+            </div>
+
+        <button onclick="gerarPDF()">Gerar Recibo PDF</button>
+        <p id="error-msg" class="error"></p>
+    </div>
+
+    <script>
+        // Configurações do Menu (Idêntico ao Python)
+        const MENU_ITENS = {
+            "The Burger": 10.00,
+            "The Bacon": 12.00,
+            "The Cheddar": 12.00,
+            "The Calabresa": 12.00,
+            "The Salada": 12.00,
+            "The Cebola Caramelizada": 12.00,
+            "The Farofa of Bacon w/ Cheddar": 12.00,
+            "The Nordestino": 12.00,
+            "The Lombinho": 12.00,
+            "The Double Bacon": 20.00,
+            "The Vaquejada": 12.00,
+            "The Batata": 5.00
+        };
+
+        const NOME_EMPRESA = "The Hungry Burger";
+
+        // Inicialização: Carregar contador e renderizar menu
+        window.onload = function() {
+            renderizarMenu();
+            carregarContador();
+        };
+
+        function renderizarMenu() {
+            const container = document.getElementById('menu-items');
+            
+            for (const [nome, preco] of Object.entries(MENU_ITENS)) {
+                const div = document.createElement('div');
+                div.className = 'control-group';
+
+                const label = document.createElement('label');
+                label.textContent = `${nome} (R$ ${preco.toFixed(2).replace('.', ',')})`;
+
+                const input = document.createElement('input');
+                input.type = 'number';
+                input.min = '0';
+                input.value = ''; // Começa vazio
+                input.placeholder = '0';
+                input.id = `qtd_${nome.replace(/\s+/g, '_')}`; // ID único baseado no nome
+                input.dataset.name = nome;
+                input.dataset.price = preco;
+
+                div.appendChild(label);
+                div.appendChild(input);
+                container.appendChild(div);
+            }
+        }
+
+        function carregarContador() {
+            const salvo = localStorage.getItem('contador_notas_burger');
+            if (salvo) {
+                document.getElementById('numeroRecibo').value = salvo;
+            }
+        }
+
+        function salvarContador(numeroAtual) {
+            const proximo = parseInt(numeroAtual) + 1;
+            document.getElementById('numeroRecibo').value = proximo;
+            localStorage.setItem('contador_notas_burger', proximo);
+        }
+
+        async function gerarPDF() {
+            const { jsPDF } = window.jspdf;
+            const errorMsg = document.getElementById('error-msg');
+            errorMsg.style.display = 'none';
+
+            // Coletar dados
+            const inputs = document.querySelectorAll('#menu-items input');
+            let itemsPedidos = [];
+            let totalGeral = 0.0;
+
+            inputs.forEach(input => {
+                const qtd = parseInt(input.value) || 0;
+                if (qtd > 0) {
+                    const nome = input.dataset.name;
+                    const preco = parseFloat(input.dataset.price);
+                    const subtotal = qtd * preco;
+                    
+                    itemsPedidos.push({
+                        nome: nome,
+                        quantidade: qtd,
+                        preco: preco,
+                        subtotal: subtotal
+                    });
+                    totalGeral += subtotal;
+                }
+            });
+
+            if (itemsPedidos.length === 0) {
+                errorMsg.textContent = "Insira a quantidade de pelo menos um item.";
+                errorMsg.style.display = 'block';
+                return;
+            }
+
+            const numeroNota = parseInt(document.getElementById('numeroRecibo').value);
+
+            // --- Configuração do PDF (Tamanho 15cm x 10cm) ---
+            // 15cm = 150mm, 10cm = 100mm
+            const doc = new jsPDF({
+                orientation: 'landscape',
+                unit: 'mm',
+                format: [150, 100] 
+            });
+
+            const width = 150;
+            const height = 100;
+            const marginLeft = 8;
+            const marginRight = width - 8;
+            let y = 10; // Posição vertical inicial
+
+            // --- 1. Cabeçalho ---
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(14);
+            doc.text(NOME_EMPRESA, width / 2, y, { align: "center" });
+            
+            y += 5;
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(8);
+            const agora = new Date();
+            const dataStr = agora.toLocaleString('pt-BR');
+            doc.text(`Gerado em: ${dataStr}`, marginLeft, y);
+            
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(10);
+            // Formatação do número com zeros à esquerda (0000X)
+            const numeroFormatado = String(numeroNota).padStart(5, '0');
+            doc.text(`Recibo Nº: ${numeroFormatado}`, marginRight, y, { align: "right" });
+
+            // Retângulo do cabeçalho
+            y += 2;
+            doc.setDrawColor(0);
+            // x, y, w, h
+            doc.rect(marginLeft, 5, marginRight - marginLeft, y - 5);
+            
+            y += 5;
+
+            // --- 2. Tabela de Itens (Usando autoTable para facilitar) ---
+            const tableData = itemsPedidos.map(item => [
+                item.nome,
+                item.quantidade.toString(),
+                `R$ ${item.preco.toFixed(2).replace('.', ',')}`,
+                `R$ ${item.subtotal.toFixed(2).replace('.', ',')}`
+            ]);
+
+            doc.autoTable({
+                startY: y,
+                head: [['Item', 'Qtd.', 'Vl. Unit.', 'Subtotal']],
+                body: tableData,
+                theme: 'grid',
+                margin: { left: marginLeft, right: 8 }, // Ajuste manual da margem direita
+                tableWidth: width - (marginLeft * 2),
+                styles: { fontSize: 8, cellPadding: 1 },
+                headStyles: { fillColor: [220, 220, 220], textColor: 20, fontStyle: 'bold' },
+                columnStyles: {
+                    0: { cellWidth: 'auto' }, // Item
+                    1: { cellWidth: 15, halign: 'center' }, // Qtd
+                    2: { cellWidth: 20, halign: 'right' }, // Unit
+                    3: { cellWidth: 20, halign: 'right' }  // Subtotal
+                }
+            });
+
+            // Pega a posição Y onde a tabela terminou
+            y = doc.lastAutoTable.finalY + 5;
+
+            // --- 3. Total ---
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(10);
+            doc.text("Total Geral:", width - 35, y, { align: "right" });
+            
+            doc.setFontSize(12);
+            doc.text(`R$ ${totalGeral.toFixed(2).replace('.', ',')}`, marginRight, y, { align: "right" });
+
+            // --- 4. Assinatura ---
+            // Fixando a assinatura na parte inferior
+            const yAssinatura = height - 15;
+            
+            doc.setLineWidth(0.2);
+            doc.line(marginLeft + 10, yAssinatura, marginRight - 10, yAssinatura);
+            
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(7);
+            doc.text("Assinatura do Recebedor", width / 2, yAssinatura + 3, { align: "center" });
+
+            // Salvar arquivo
+            doc.save(`Recibo_N${numeroFormatado}.pdf`);
+
+            // Atualizar UI e Contador
+            salvarContador(numeroNota);
+            
+            // Limpar campos
+            inputs.forEach(input => input.value = '');
+            alert(`Recibo Nº ${numeroFormatado} gerado com sucesso!`);
+        }
+    </script>
+</body>
+</html>
